@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: aac-keyguard-generator
+    runtime: docker
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /api/health
