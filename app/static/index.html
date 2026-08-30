@@ -14,7 +14,7 @@
         <h1>Keyguard 產生器</h1>
         <p>上傳 AAC 截圖、標示要挖空的區域，再輸出 SVG / STL。</p>
       </div>
-      <div class="status" id="status">第一版</div>
+      <div class="status" id="status">快速孔位版</div>
     </header>
 
     <section class="workspace">
@@ -42,7 +42,17 @@
         <div class="hint" id="thicknessHint">主體厚度：3 mm</div>
 
         <h2>3. 孔位工具</h2>
-        <p class="small">在圖片上拖曳矩形，建立「要挖空」的範圍。點選既有框可刪除。</p>
+        <div class="tool-grid">
+          <button id="drawModeBtn" class="tool-btn active" type="button">① 框一格</button>
+          <button id="stampModeBtn" class="tool-btn" type="button">② 同尺寸點選</button>
+          <button id="deleteModeBtn" class="tool-btn danger" type="button">刪除孔位</button>
+        </div>
+        <div class="tool-hint" id="toolHint">先拖曳框出一個 AAC 按鈕。完成後會自動切成「同尺寸點選」。</div>
+        <div class="template-card">
+          <span>目前樣板孔</span>
+          <strong id="templateSize">尚未設定</strong>
+        </div>
+        <p class="small">AAC 格子相同時，只要第一格用拖曳設定大小，之後直接點每個按鈕中央即可。遇到不同大小的輸入列或功能鍵，再按「框一格」重新設定尺寸。</p>
         <div class="button-row">
           <button id="clearBtn" class="secondary">清空孔位</button>
           <button id="undoBtn" class="secondary">復原</button>
@@ -61,7 +71,10 @@
             <strong>孔位編修</strong>
             <span id="holeCount">0 個孔</span>
           </div>
-          <div class="legend"><span class="legend-hole"></span> 白色 = 挖空</div>
+          <div class="legend">
+            <span><i class="legend-hole"></i> 已挖孔</span>
+            <span><i class="legend-current"></i> 最後新增</span>
+          </div>
         </div>
         <div class="canvas-wrap" id="canvasWrap">
           <canvas id="editorCanvas"></canvas>
