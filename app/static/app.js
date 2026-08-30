@@ -5,6 +5,8 @@ const cornerRadiusInput=document.getElementById('cornerRadiusInput');
 const canvas=document.getElementById('editorCanvas');
 const ctx=canvas.getContext('2d');
 const emptyState=document.getElementById('emptyState');
+const canvasWrap=document.getElementById('canvasWrap');
+const replaceImageBtn=document.getElementById('replaceImageBtn');
 const holeWidthInput=document.getElementById('holeWidthInput');
 const holeHeightInput=document.getElementById('holeHeightInput');
 let presets={};let image=null;let holes=[];let history=[];let mode='draw';let view='source';let templateHole=null;let selectedIndex=-1;let lastAddedIndex=-1;let dragStart=null;let moveState=null;let draftRect=null;
@@ -66,6 +68,14 @@ function updateTemplateLabel(){const el=document.getElementById('templateSize');
 function updateSelectedEditor(){const p=presets[presetSelect.value];const valid=selectedIndex>=0&&selectedIndex<holes.length;document.getElementById('selectedLabel').textContent=valid?`#${selectedIndex+1}`:'—';[holeWidthInput,holeHeightInput,document.getElementById('smallerBtn'),document.getElementById('largerBtn')].forEach(el=>el.disabled=!valid);if(valid&&p){holeWidthInput.value=(holes[selectedIndex].w*p.width_mm).toFixed(1);holeHeightInput.value=(holes[selectedIndex].h*p.height_mm).toFixed(1)}else{holeWidthInput.value='';holeHeightInput.value=''}}
 function resizeSelected(widthMm,heightMm){if(selectedIndex<0)return;const p=presets[presetSelect.value],h=holes[selectedIndex];const nw=Math.max(1,widthMm)/p.width_mm,nh=Math.max(1,heightMm)/p.height_mm;const cx=h.x+h.w/2,cy=h.y+h.h/2;holes[selectedIndex]=clampHole({x:cx-nw/2,y:cy-nh/2,w:nw,h:nh});templateHole={w:holes[selectedIndex].w,h:holes[selectedIndex].h};lastAddedIndex=selectedIndex;updateTemplateLabel();updateSelectedEditor();draw()}
 
+function openImagePicker(){imageInput.click()}
+function loadImageFile(file){
+  if(!file||!file.type.startsWith('image/'))return;
+  const url=URL.createObjectURL(file);const img=new Image();
+  img.onload=()=>{image=img;holes=[];history=[];templateHole=null;selectedIndex=-1;lastAddedIndex=-1;emptyState.style.display='none';canvasWrap.classList.remove('empty');canvasWrap.classList.add('has-image');replaceImageBtn.style.display='inline-flex';setCanvasSize();setView('source');setMode('draw');updateTemplateLabel();updateSelectedEditor();draw();URL.revokeObjectURL(url)};
+  img.src=url;
+}
+
 canvas.addEventListener('pointerdown',e=>{
   if(!image||view!=='source')return;const p=point(e);
   if(mode==='draw'){dragStart=p;draftRect={x:p.x,y:p.y,w:0,h:0};canvas.setPointerCapture(e.pointerId);return}
@@ -84,7 +94,14 @@ canvas.addEventListener('pointerup',e=>{
   moveState=null;
 });
 
-imageInput.addEventListener('change',()=>{const f=imageInput.files[0];if(!f)return;const url=URL.createObjectURL(f);const img=new Image();img.onload=()=>{image=img;holes=[];history=[];templateHole=null;selectedIndex=-1;lastAddedIndex=-1;emptyState.style.display='none';setCanvasSize();setView('source');setMode('draw');updateTemplateLabel();updateSelectedEditor();draw();URL.revokeObjectURL(url)};img.src=url});
+emptyState.addEventListener('click',e=>{e.stopPropagation();openImagePicker()});
+canvasWrap.addEventListener('click',()=>{if(!image)openImagePicker()});
+replaceImageBtn.addEventListener('click',openImagePicker);
+canvasWrap.addEventListener('dragover',e=>{e.preventDefault();if(!image)canvasWrap.classList.add('dragging')});
+canvasWrap.addEventListener('dragleave',()=>canvasWrap.classList.remove('dragging'));
+canvasWrap.addEventListener('drop',e=>{e.preventDefault();canvasWrap.classList.remove('dragging');const f=e.dataTransfer.files&&e.dataTransfer.files[0];if(f)loadImageFile(f)});
+imageInput.addEventListener('change',()=>{const f=imageInput.files[0];if(f)loadImageFile(f);imageInput.value=''});
+
 presetSelect.addEventListener('change',updateSpecs);earsToggle.addEventListener('change',updateSpecs);cornerRadiusInput.addEventListener('input',draw);
 document.getElementById('drawModeBtn').onclick=()=>setMode('draw');document.getElementById('stampModeBtn').onclick=()=>setMode('stamp');document.getElementById('selectModeBtn').onclick=()=>setMode('select');document.getElementById('deleteModeBtn').onclick=()=>setMode('delete');
 document.getElementById('sourceViewBtn').onclick=()=>setView('source');document.getElementById('previewViewBtn').onclick=()=>setView('preview');
