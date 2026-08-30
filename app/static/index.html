@@ -19,16 +19,10 @@
 
     <section class="workspace">
       <aside class="panel controls">
-        <h2>1. 上傳與尺寸</h2>
-        <label class="upload">
-          <input id="imageInput" type="file" accept="image/*" />
-          <span>選擇 AAC 截圖</span>
-        </label>
-
+        <h2>1. iPad 尺寸</h2>
         <label>iPad 型號
           <select id="presetSelect"></select>
         </label>
-
         <div class="size-card">
           <span>實體螢幕範圍</span>
           <strong id="screenSize">—</strong>
@@ -85,7 +79,7 @@
 
       <section class="canvas-panel">
         <div class="canvas-toolbar">
-          <div>
+          <div class="canvas-title">
             <strong>孔位編修</strong>
             <span id="holeCount">0 個孔</span>
           </div>
@@ -93,15 +87,22 @@
             <button id="sourceViewBtn" class="view-btn active" type="button">原圖＋孔位</button>
             <button id="previewViewBtn" class="view-btn" type="button">黑白預覽</button>
           </div>
-          <div class="legend">
-            <span><i class="legend-hole"></i> 已挖孔</span>
-            <span><i class="legend-current"></i> 選取／最後新增</span>
+          <div class="toolbar-actions">
+            <button id="replaceImageBtn" class="replace-image-btn" type="button">更換截圖</button>
           </div>
         </div>
-        <div class="canvas-wrap" id="canvasWrap">
+
+        <div class="canvas-wrap empty" id="canvasWrap">
+          <input id="imageInput" class="hidden-file-input" type="file" accept="image/*" />
           <canvas id="editorCanvas"></canvas>
-          <div class="empty-state" id="emptyState">先上傳一張完整 iPad 螢幕截圖</div>
+          <button class="empty-state" id="emptyState" type="button">
+            <span class="upload-icon">＋</span>
+            <strong>點這裡上傳 AAC 截圖</strong>
+            <span>使用完整的 iPad 螢幕截圖</span>
+            <small>也可以把圖片直接拖到這裡</small>
+          </button>
         </div>
+
         <div class="canvas-footer">
           <span id="mirrorNote">無耳朵：不鏡像</span>
           <span>主體 <strong id="bodyThickness">3 mm</strong></span>
