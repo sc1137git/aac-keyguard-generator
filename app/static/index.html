@@ -39,7 +39,10 @@
           <input id="earsToggle" type="checkbox" />
           <span>加固定耳朵</span>
         </label>
-        <div class="hint" id="thicknessHint">主體厚度：3 mm</div>
+        <label>外框四角圓角
+          <div class="unit-input"><input id="cornerRadiusInput" type="number" min="0" max="20" step="0.5" value="6"><span>mm</span></div>
+        </label>
+        <div class="hint" id="thicknessHint">主體厚度：3 mm｜四角預設 6 mm 圓角</div>
 
         <h2>3. 孔位工具</h2>
         <div class="tool-grid">
@@ -65,7 +68,7 @@
             <button id="smallerBtn" class="secondary" disabled>縮小 0.5 mm</button>
             <button id="largerBtn" class="secondary" disabled>放大 0.5 mm</button>
           </div>
-          <div class="small">切到「調整孔位」後點一個孔，就可以直接改寬、高；也可以拖曳整個孔的位置。</div>
+          <div class="small">切到「調整孔位」後點一個孔，可直接改寬、高，也能拖曳整個孔的位置。</div>
         </div>
 
         <div class="button-row">
