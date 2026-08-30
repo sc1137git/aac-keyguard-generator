@@ -14,7 +14,7 @@
         <h1>Keyguard 產生器</h1>
         <p>上傳 AAC 截圖、標示要挖空的區域，再輸出 SVG / STL。</p>
       </div>
-      <div class="status" id="status">快速孔位版</div>
+      <div class="status" id="status">自動辨識版</div>
     </header>
 
     <section class="workspace">
@@ -45,7 +45,7 @@
           <button id="selectModeBtn" class="tool-btn" type="button">調整孔位</button>
           <button id="deleteModeBtn" class="tool-btn danger" type="button">刪除孔位</button>
         </div>
-        <div class="tool-hint" id="toolHint">先拖曳框出一個 AAC 按鈕。完成後會自動切成「同尺寸點選」。</div>
+        <div class="tool-hint" id="toolHint">上傳後會先自動辨識；這些工具只用來補漏或修正。</div>
 
         <div class="template-card">
           <span>目前樣板孔</span>
@@ -98,7 +98,7 @@
           <button class="empty-state" id="emptyState" type="button">
             <span class="upload-icon">＋</span>
             <strong>點這裡上傳 AAC 截圖</strong>
-            <span>使用完整的 iPad 螢幕截圖</span>
+            <span>上傳後會自動辨識實心按鈕與虛線預留格</span>
             <small>也可以把圖片直接拖到這裡</small>
           </button>
         </div>
@@ -114,5 +114,6 @@
   </main>
 
   <script src="/static/app.js"></script>
+  <script src="/static/auto-detect.js"></script>
 </body>
 </html>
