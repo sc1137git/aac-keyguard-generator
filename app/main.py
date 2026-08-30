@@ -1,4 +1,3 @@
-from io import BytesIO
 from pathlib import Path
 from typing import List
 
@@ -38,6 +37,7 @@ class ModelRequest(BaseModel):
     ear_thickness_mm: float = 0.8
     ear_extension_mm: float = 16.0
     ear_height_mm: float = 22.0
+    corner_radius_mm: float = Field(default=6.0, ge=0, le=20)
 
 
 @app.get("/api/health")
@@ -50,13 +50,25 @@ def presets():
     return PRESETS
 
 
+def rounded_plate(width: float, height: float, radius: float):
+    radius = max(0.0, min(radius, width / 2, height / 2))
+    base = box(0, 0, width, height)
+    if radius <= 0:
+        return base
+    # 先向內縮，再以圓角向外擴回原尺寸，四角會成為真正圓角幾何。
+    inner = base.buffer(-radius, join_style=1)
+    if inner.is_empty:
+        return base
+    return inner.buffer(radius, join_style=1)
+
+
 def build_plate(payload: ModelRequest) -> trimesh.Trimesh:
     preset = PRESETS[payload.preset]
     width = preset["width_mm"]
     height = preset["height_mm"]
     thickness = payload.body_thickness_mm or (5.0 if payload.ears else 3.0)
 
-    plate = box(0, 0, width, height)
+    plate = rounded_plate(width, height, payload.corner_radius_mm)
     holes = []
     for h in payload.holes:
         x = h.x * width
@@ -76,7 +88,7 @@ def build_plate(payload: ModelRequest) -> trimesh.Trimesh:
     if not payload.ears:
         return body
 
-    # 第一版耳朵：左右各一片薄耳，之後會依既有成功 STL 再精修輪廓與孔位。
+    # 第一版耳朵：左右各一片薄耳，之後再依既有成功 STL 精修輪廓與孔位。
     cy = height / 2
     ear_h = payload.ear_height_mm
     ext = payload.ear_extension_mm
