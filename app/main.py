@@ -14,7 +14,7 @@ from shapely.ops import unary_union
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 
-app = FastAPI(title="AAC Keyguard Generator", version="0.2.0")
+app = FastAPI(title="AAC Keyguard Generator", version="0.3.0")
 
 PRESETS = {
     "ipad-7": {"label": "iPad 7", "width_mm": 207.82, "height_mm": 155.86, "pixels": [2160, 1620]},
@@ -114,7 +114,7 @@ def detect_aac_holes(image: np.ndarray) -> tuple[list[dict], dict]:
     height, width = image.shape[:2]
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-    # 先找「完整黑框」按鈕，從大量相同尺寸的框推算 AAC 主格線。
+    # 先找完整黑框按鈕，再由重複尺寸推算整個 AAC 格線。
     _, dark = cv2.threshold(gray, 110, 255, cv2.THRESH_BINARY_INV)
     dark = cv2.morphologyEx(dark, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
     contours, _ = cv2.findContours(dark, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
@@ -151,7 +151,6 @@ def detect_aac_holes(image: np.ndarray) -> tuple[list[dict], dict]:
         x_centers = _cluster([rect[0] + rect[2] / 2 for rect in dominant], max(0.018, cell_w * 0.20))
         y_centers = _cluster([rect[1] + rect[3] / 2 for rect in dominant], max(0.018, cell_h * 0.20))
 
-        # 只接受 3~8 欄的規則 AAC 主格。
         if 3 <= len(x_centers) <= 8 and len(y_centers) >= 2:
             y_diffs = np.diff(sorted(y_centers))
             row_gap = float(np.median(y_diffs)) if len(y_diffs) else cell_h * 1.15
@@ -159,13 +158,12 @@ def detect_aac_holes(image: np.ndarray) -> tuple[list[dict], dict]:
             row_centers: list[float] = []
             for index in range(10):
                 cy = first_y + index * row_gap
-                # 底部功能列通常自畫面 85% 左右開始，不把它誤當 AAC 主格。
                 if cy + cell_h / 2 >= 0.845:
                     break
                 scores = [_border_score(gray, cx, cy, cell_w, cell_h) for cx in x_centers]
                 average_score = float(np.mean(scores)) if scores else 0.0
                 near_known = any(abs(cy - known) < row_gap * 0.28 for known in y_centers)
-                # 虛線框的邊線仍會有足夠暗像素；因此與實心框一樣保留成孔。
+                # 「點擊以添加按鈕」的虛線預留格也必須保留成可按孔位。
                 if near_known or average_score >= 0.12:
                     row_centers.append(cy)
                     if not near_known:
@@ -178,7 +176,7 @@ def detect_aac_holes(image: np.ndarray) -> tuple[list[dict], dict]:
                     holes.append(_inset_rect(cx - cell_w / 2, cy - cell_h / 2, cell_w, cell_h))
             grid_count = len(row_centers) * len(x_centers)
 
-    # 上方輸入列與右上功能鍵通常也是完整圓角框，另外自動保留。
+    # 上方輸入列與右上功能鍵另外保留。
     edges = cv2.Canny(gray, 50, 150)
     edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
     edge_contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
@@ -194,13 +192,10 @@ def detect_aac_holes(image: np.ndarray) -> tuple[list[dict], dict]:
         large = [rect for rect in top_rects if rect[2] > 0.45]
         right = [rect for rect in top_rects if rect[0] > 0.72 and rect[2] < 0.30]
         if large:
-            rect = max(large, key=lambda r: r[2] * r[3])
-            holes.append(_inset_rect(*rect, factor=0.035))
+            holes.append(_inset_rect(*max(large, key=lambda r: r[2] * r[3]), factor=0.035))
         if right:
-            rect = max(right, key=lambda r: r[2] * r[3])
-            holes.append(_inset_rect(*rect, factor=0.035))
+            holes.append(_inset_rect(*max(right, key=lambda r: r[2] * r[3]), factor=0.035))
 
-    # 排序後讓畫面上的孔位編號由上到下、由左到右。
     holes.sort(key=lambda item: (item["y"], item["x"]))
     return holes, {
         "grid_holes": grid_count,
@@ -233,44 +228,60 @@ def rounded_plate(width: float, height: float, radius: float):
 
 
 def build_plate(payload: ModelRequest) -> trimesh.Trimesh:
+    if payload.preset not in PRESETS:
+        raise ValueError(f"Unknown preset: {payload.preset}")
+
     preset = PRESETS[payload.preset]
     width = preset["width_mm"]
     height = preset["height_mm"]
     thickness = payload.body_thickness_mm or (5.0 if payload.ears else 3.0)
 
     plate = rounded_plate(width, height, payload.corner_radius_mm)
-    holes = []
+    cutouts = []
     for h in payload.holes:
         x = h.x * width
         y = h.y * height
         w = h.w * width
         hh = h.h * height
+        # 有耳朵的版本會反向蓋上 iPad，所以先鏡像孔位，再建立耳朵。
         if payload.ears:
             x = width - x - w
-        holes.append(box(x, y, x + w, y + hh))
+        cutouts.append(box(x, y, x + w, y + hh))
 
-    if holes:
-        plate = plate.difference(unary_union(holes))
-
-    body = trimesh.creation.extrude_polygon(plate, height=thickness)
+    if cutouts:
+        plate = plate.difference(unary_union(cutouts))
 
     if not payload.ears:
-        return body
+        return trimesh.creation.extrude_polygon(plate, height=thickness)
 
+    # 有耳朵：耳朵只存在最底下 0.8 mm；主體總厚度預設 5 mm。
+    # 先把已鏡像孔位的 plate 與左右耳朵合成「底層」，避免 MultiPolygon 直接 extrude 失敗。
     cy = height / 2
     ear_h = payload.ear_height_mm
     ext = payload.ear_extension_mm
-    left = box(-ext, cy - ear_h / 2, 0, cy + ear_h / 2)
-    right = box(width, cy - ear_h / 2, width + ext, cy + ear_h / 2)
-    ears_2d = unary_union([left, right])
-    ears = trimesh.creation.extrude_polygon(ears_2d, height=payload.ear_thickness_mm)
-    return trimesh.util.concatenate([body, ears])
+    ear_t = max(0.1, min(payload.ear_thickness_mm, thickness))
+    overlap = 0.6
+
+    left_ear = box(-ext, cy - ear_h / 2, overlap, cy + ear_h / 2)
+    right_ear = box(width - overlap, cy - ear_h / 2, width + ext, cy + ear_h / 2)
+    bottom_shape = unary_union([plate, left_ear, right_ear])
+    bottom_mesh = trimesh.creation.extrude_polygon(bottom_shape, height=ear_t)
+
+    if thickness <= ear_t + 1e-6:
+        return bottom_mesh
+
+    upper_mesh = trimesh.creation.extrude_polygon(plate, height=thickness - ear_t)
+    upper_mesh.apply_translation((0, 0, ear_t))
+    return trimesh.util.concatenate([bottom_mesh, upper_mesh])
 
 
 @app.post("/api/export/stl")
 def export_stl(payload: ModelRequest):
-    mesh = build_plate(payload)
-    data = mesh.export(file_type="stl")
+    try:
+        mesh = build_plate(payload)
+        data = mesh.export(file_type="stl")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"STL 產生失敗：{exc}") from exc
     return Response(
         content=data,
         media_type="model/stl",
