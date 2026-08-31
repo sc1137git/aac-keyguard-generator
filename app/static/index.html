@@ -12,69 +12,71 @@
       <div>
         <div class="eyebrow">AAC 工具</div>
         <h1>Keyguard 產生器</h1>
-        <p>上傳 AAC 截圖、標示要挖空的區域，再輸出 SVG / STL。</p>
+        <p>上傳 AAC 截圖，自動辨識孔位後直接修正並輸出 SVG / STL。</p>
       </div>
       <div class="status" id="status">自動辨識版</div>
     </header>
 
     <section class="workspace">
       <aside class="panel controls">
-        <h2>1. iPad 尺寸</h2>
-        <label>iPad 型號
-          <select id="presetSelect"></select>
-        </label>
-        <div class="size-card">
-          <span>實體螢幕範圍</span>
-          <strong id="screenSize">—</strong>
-        </div>
-
-        <h2>2. Keyguard 設定</h2>
-        <label class="toggle-row">
-          <input id="earsToggle" type="checkbox" />
-          <span>加固定耳朵</span>
-        </label>
-        <label>外框四角圓角
-          <div class="unit-input"><input id="cornerRadiusInput" type="number" min="0" max="20" step="0.5" value="6"><span>mm</span></div>
-        </label>
-        <div class="hint" id="thicknessHint">主體厚度：3 mm｜四角預設 6 mm 圓角</div>
-
-        <h2>3. 孔位工具</h2>
-        <div class="tool-grid">
-          <button id="drawModeBtn" class="tool-btn active" type="button">① 框一格</button>
-          <button id="stampModeBtn" class="tool-btn" type="button">② 同尺寸點選</button>
-          <button id="selectModeBtn" class="tool-btn" type="button">調整孔位</button>
-          <button id="deleteModeBtn" class="tool-btn danger" type="button">刪除孔位</button>
-        </div>
-        <div class="tool-hint" id="toolHint">上傳後會先自動辨識；這些工具只用來補漏或修正。</div>
-
-        <div class="template-card">
-          <span>目前樣板孔</span>
-          <strong id="templateSize">尚未設定</strong>
-        </div>
-
-        <div class="selected-card" id="selectedCard">
-          <div class="selected-title">選取孔位 <strong id="selectedLabel">—</strong></div>
-          <div class="size-edit-grid">
-            <label>寬度 (mm)<input id="holeWidthInput" type="number" min="1" step="0.1" disabled></label>
-            <label>高度 (mm)<input id="holeHeightInput" type="number" min="1" step="0.1" disabled></label>
+        <section class="control-section">
+          <h2>1. iPad 尺寸</h2>
+          <label>iPad 型號
+            <select id="presetSelect"></select>
+          </label>
+          <div class="size-card compact-card">
+            <span>實體螢幕範圍</span>
+            <strong id="screenSize">—</strong>
           </div>
-          <div class="nudge-grid">
-            <button id="smallerBtn" class="secondary" disabled>縮小 0.5 mm</button>
-            <button id="largerBtn" class="secondary" disabled>放大 0.5 mm</button>
+        </section>
+
+        <section class="control-section">
+          <h2>2. Keyguard 設定</h2>
+          <label class="toggle-row">
+            <input id="earsToggle" type="checkbox" />
+            <span>加固定耳朵</span>
+          </label>
+          <label>外框四角圓角
+            <div class="unit-input"><input id="cornerRadiusInput" type="number" min="0" max="20" step="0.5" value="6"><span>mm</span></div>
+          </label>
+          <div class="hint" id="thicknessHint">主體厚度：3 mm</div>
+        </section>
+
+        <section class="control-section">
+          <h2>3. 手動修正</h2>
+          <div class="tool-grid three-tools">
+            <button id="drawModeBtn" class="tool-btn" type="button">＋ 新增孔位</button>
+            <button id="selectModeBtn" class="tool-btn active" type="button">調整孔位</button>
+            <button id="deleteModeBtn" class="tool-btn danger" type="button">刪除孔位</button>
           </div>
-          <div class="small">切到「調整孔位」後點一個孔，可直接改寬、高，也能拖曳整個孔的位置。</div>
-        </div>
+          <div class="tool-hint" id="toolHint">點孔位可調整大小；拖曳孔位時也會自動對齊。</div>
+          <div class="align-note"><i></i> 藍色線＝邊緣／中心吸附對齊</div>
 
-        <div class="button-row">
-          <button id="clearBtn" class="secondary">清空孔位</button>
-          <button id="undoBtn" class="secondary">復原</button>
-        </div>
+          <div class="selected-card" id="selectedCard">
+            <div class="selected-title">選取孔位 <strong id="selectedLabel">—</strong></div>
+            <div class="size-edit-grid">
+              <label>寬度 mm<input id="holeWidthInput" type="number" min="1" step="0.1" disabled></label>
+              <label>高度 mm<input id="holeHeightInput" type="number" min="1" step="0.1" disabled></label>
+            </div>
+            <div class="nudge-grid">
+              <button id="smallerBtn" class="secondary" disabled>縮小 0.5</button>
+              <button id="largerBtn" class="secondary" disabled>放大 0.5</button>
+            </div>
+          </div>
 
-        <h2>4. 匯出</h2>
-        <div class="button-stack">
-          <button id="svgBtn">下載 SVG</button>
-          <button id="stlBtn">下載 STL</button>
-        </div>
+          <div class="button-row">
+            <button id="clearBtn" class="secondary">清空孔位</button>
+            <button id="undoBtn" class="secondary">復原</button>
+          </div>
+        </section>
+
+        <section class="control-section export-section">
+          <h2>4. 匯出</h2>
+          <div class="button-row export-row">
+            <button id="svgBtn">下載 SVG</button>
+            <button id="stlBtn">下載 STL</button>
+          </div>
+        </section>
       </aside>
 
       <section class="canvas-panel">
@@ -88,6 +90,7 @@
             <button id="previewViewBtn" class="view-btn" type="button">黑白預覽</button>
           </div>
           <div class="toolbar-actions">
+            <button id="autoDetectBtn" class="replace-image-btn" type="button">重新自動辨識</button>
             <button id="replaceImageBtn" class="replace-image-btn" type="button">更換截圖</button>
           </div>
         </div>
@@ -114,6 +117,5 @@
   </main>
 
   <script src="/static/app.js"></script>
-  <script src="/static/auto-detect.js"></script>
 </body>
 </html>
