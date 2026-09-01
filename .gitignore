@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Secrets / local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# Local data / databases
+*.db
+*.sqlite
+*.sqlite3
+instance/
+data/
+uploads/
+
+# Generated CAD / exports
+*.stl
+*.3mf
+*.obj
+*.step
+*.stp
+*.dxf
+*.gcode
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs / temp
+*.log
+*.tmp
+*.temp
