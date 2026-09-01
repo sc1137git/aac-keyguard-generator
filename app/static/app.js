@@ -1,6 +1,9 @@
 const imageInput=document.getElementById('imageInput');
 const presetSelect=document.getElementById('presetSelect');
 const earsToggle=document.getElementById('earsToggle');
+const bodyThicknessInput=document.getElementById('bodyThicknessInput');
+const earThicknessInput=document.getElementById('earThicknessInput');
+const earThicknessRow=document.getElementById('earThicknessRow');
 const cornerRadiusInput=document.getElementById('cornerRadiusInput');
 const canvas=document.getElementById('editorCanvas');
 const ctx=canvas.getContext('2d');
@@ -10,6 +13,11 @@ const replaceImageBtn=document.getElementById('replaceImageBtn');
 const autoDetectBtn=document.getElementById('autoDetectBtn');
 const holeWidthInput=document.getElementById('holeWidthInput');
 const holeHeightInput=document.getElementById('holeHeightInput');
+
+const EAR_EXTENSION_MM=16;
+const EAR_HEIGHT_MM=18;
+const EAR_RADIUS_MM=4;
+const EAR_OVERLAP_MM=0.8;
 
 let presets={};
 let image=null;
@@ -44,18 +52,43 @@ function setStatus(text){
   if(status)status.textContent=text;
 }
 
+function bodyThicknessValue(){
+  return Math.max(1,Math.min(10,parseFloat(bodyThicknessInput.value)||3));
+}
+
+function earThicknessValue(){
+  return Math.max(.2,Math.min(bodyThicknessValue(),parseFloat(earThicknessInput.value)||.8));
+}
+
+function earCentersMm(height){
+  const edgeCenter=Math.max(26,Math.min(30,height*.20));
+  return [edgeCenter,height-edgeCenter];
+}
+
 function updateSpecs(){
   const p=presets[presetSelect.value];
   if(!p)return;
   document.getElementById('screenSize').textContent=`${p.width_mm} × ${p.height_mm} mm`;
   const ears=earsToggle.checked;
-  document.getElementById('thicknessHint').textContent=ears?'主體厚度：5 mm；耳朵：0.8 mm':'主體厚度：3 mm';
-  document.getElementById('bodyThickness').textContent=ears?'5 mm':'3 mm';
-  document.getElementById('earThickness').textContent=ears?'0.8 mm':'—';
-  document.getElementById('flowText').textContent=ears?'先鏡像 → 再加耳朵':'正常生成';
+  const body=bodyThicknessValue();
+  const ear=earThicknessValue();
+  earThicknessRow.hidden=!ears;
+  document.getElementById('thicknessHint').textContent=ears
+    ?`主體 ${body.toFixed(1)} mm；四個圓角耳朵 ${ear.toFixed(1)} mm`
+    :`主體厚度 ${body.toFixed(1)} mm`;
+  document.getElementById('bodyThickness').textContent=`${body.toFixed(1)} mm`;
+  document.getElementById('earThickness').textContent=ears?`${ear.toFixed(1)} mm`:'—';
+  document.getElementById('flowText').textContent=ears?'先鏡像 → 再加四耳':'正常生成';
   document.getElementById('mirrorNote').textContent=ears?'有耳朵：匯出時先鏡像孔位':'無耳朵：不鏡像';
   updateSelectedEditor();
   draw();
+}
+
+function handleEarsToggle(){
+  const current=bodyThicknessValue();
+  if(earsToggle.checked&&Math.abs(current-3)<.01)bodyThicknessInput.value='5';
+  if(!earsToggle.checked&&Math.abs(current-5)<.01)bodyThicknessInput.value='3';
+  updateSpecs();
 }
 
 function setCanvasSize(){
@@ -75,6 +108,58 @@ function roundedRectPath(c,x,y,w,h,r){
   c.closePath();
 }
 
+function fillRoundedRect(x,y,w,h,r,fill='black'){
+  ctx.save();
+  roundedRectPath(ctx,x,y,w,h,r);
+  ctx.fillStyle=fill;
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawPreview(){
+  const p=presets[presetSelect.value];
+  if(!p)return;
+  const ears=earsToggle.checked;
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  if(!ears){
+    const radiusPx=(parseFloat(cornerRadiusInput.value)||0)/p.width_mm*canvas.width;
+    fillRoundedRect(0,0,canvas.width,canvas.height,radiusPx,'black');
+    ctx.fillStyle='white';
+    holes.forEach(h=>ctx.fillRect(h.x*canvas.width,h.y*canvas.height,h.w*canvas.width,h.h*canvas.height));
+    return;
+  }
+
+  ctx.fillStyle='#dfe5ec';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  const totalWidthMm=p.width_mm+EAR_EXTENSION_MM*2;
+  const scale=Math.min(canvas.width/totalWidthMm,canvas.height/p.height_mm)*.94;
+  const plateW=p.width_mm*scale;
+  const plateH=p.height_mm*scale;
+  const plateX=(canvas.width-plateW)/2;
+  const plateY=(canvas.height-plateH)/2;
+  const outerRadius=(parseFloat(cornerRadiusInput.value)||0)*scale;
+  fillRoundedRect(plateX,plateY,plateW,plateH,outerRadius,'black');
+
+  const earW=(EAR_EXTENSION_MM+EAR_OVERLAP_MM)*scale;
+  const earH=EAR_HEIGHT_MM*scale;
+  const earR=EAR_RADIUS_MM*scale;
+  for(const cyMm of earCentersMm(p.height_mm)){
+    const y=plateY+(cyMm-EAR_HEIGHT_MM/2)*scale;
+    fillRoundedRect(plateX-EAR_EXTENSION_MM*scale,y,earW,earH,earR,'black');
+    fillRoundedRect(plateX+(p.width_mm-EAR_OVERLAP_MM)*scale,y,earW,earH,earR,'black');
+  }
+
+  ctx.fillStyle='white';
+  holes.forEach(h=>{
+    const xMm=(1-h.x-h.w)*p.width_mm;
+    const yMm=h.y*p.height_mm;
+    const wMm=h.w*p.width_mm;
+    const hMm=h.h*p.height_mm;
+    ctx.fillRect(plateX+xMm*scale,plateY+yMm*scale,wMm*scale,hMm*scale);
+  });
+}
+
 function draw(){
   if(!image){
     ctx.clearRect(0,0,canvas.width,canvas.height);
@@ -87,16 +172,7 @@ function draw(){
     if(draftRect)drawDraft(draftRect);
     drawSnapGuides();
   }else{
-    const p=presets[presetSelect.value];
-    const radiusPx=(parseFloat(cornerRadiusInput.value)||0)/p.width_mm*canvas.width;
-    ctx.save();
-    roundedRectPath(ctx,0,0,canvas.width,canvas.height,radiusPx);
-    ctx.fillStyle='black';
-    ctx.fill();
-    ctx.restore();
-    ctx.fillStyle='white';
-    const previewHoles=earsToggle.checked?holes.map(h=>({...h,x:1-h.x-h.w})):holes;
-    previewHoles.forEach(h=>ctx.fillRect(h.x*canvas.width,h.y*canvas.height,h.w*canvas.width,h.h*canvas.height));
+    drawPreview();
   }
   document.getElementById('holeCount').textContent=`${holes.length} 個孔`;
 }
@@ -495,7 +571,9 @@ imageInput.addEventListener('change',()=>{
 });
 
 presetSelect.addEventListener('change',updateSpecs);
-earsToggle.addEventListener('change',updateSpecs);
+earsToggle.addEventListener('change',handleEarsToggle);
+bodyThicknessInput.addEventListener('input',updateSpecs);
+earThicknessInput.addEventListener('input',updateSpecs);
 cornerRadiusInput.addEventListener('input',draw);
 document.getElementById('drawModeBtn').onclick=()=>setMode('draw');
 document.getElementById('selectModeBtn').onclick=()=>setMode('select');
@@ -539,9 +617,22 @@ document.getElementById('largerBtn').onclick=()=>{
 function svgText(){
   const p=presets[presetSelect.value];
   const r=Math.max(0,parseFloat(cornerRadiusInput.value)||0);
-  const list=earsToggle.checked?holes.map(h=>({...h,x:1-h.x-h.w})):holes;
-  const holeRects=list.map(h=>`<rect x="${(h.x*p.width_mm).toFixed(3)}" y="${(h.y*p.height_mm).toFixed(3)}" width="${(h.w*p.width_mm).toFixed(3)}" height="${(h.h*p.height_mm).toFixed(3)}" fill="white"/>`).join('');
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${p.width_mm}mm" height="${p.height_mm}mm" viewBox="0 0 ${p.width_mm} ${p.height_mm}"><rect width="${p.width_mm}" height="${p.height_mm}" rx="${r}" ry="${r}" fill="black"/>${holeRects}</svg>`;
+  const ears=earsToggle.checked;
+  const offset=ears?EAR_EXTENSION_MM:0;
+  const outputWidth=p.width_mm+offset*2;
+  const list=ears?holes.map(h=>({...h,x:1-h.x-h.w})):holes;
+  const body=`<rect x="${offset}" y="0" width="${p.width_mm}" height="${p.height_mm}" rx="${r}" ry="${r}" fill="black"/>`;
+  let earRects='';
+  if(ears){
+    const earW=EAR_EXTENSION_MM+EAR_OVERLAP_MM;
+    for(const cy of earCentersMm(p.height_mm)){
+      const y=cy-EAR_HEIGHT_MM/2;
+      earRects+=`<rect x="0" y="${y.toFixed(3)}" width="${earW.toFixed(3)}" height="${EAR_HEIGHT_MM}" rx="${EAR_RADIUS_MM}" ry="${EAR_RADIUS_MM}" fill="black"/>`;
+      earRects+=`<rect x="${(offset+p.width_mm-EAR_OVERLAP_MM).toFixed(3)}" y="${y.toFixed(3)}" width="${earW.toFixed(3)}" height="${EAR_HEIGHT_MM}" rx="${EAR_RADIUS_MM}" ry="${EAR_RADIUS_MM}" fill="black"/>`;
+    }
+  }
+  const holeRects=list.map(h=>`<rect x="${(offset+h.x*p.width_mm).toFixed(3)}" y="${(h.y*p.height_mm).toFixed(3)}" width="${(h.w*p.width_mm).toFixed(3)}" height="${(h.h*p.height_mm).toFixed(3)}" fill="white"/>`).join('');
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${outputWidth}mm" height="${p.height_mm}mm" viewBox="0 0 ${outputWidth} ${p.height_mm}">${body}${earRects}${holeRects}</svg>`;
 }
 
 function downloadBlob(data,type,name){
@@ -570,6 +661,10 @@ document.getElementById('stlBtn').onclick=async()=>{
         preset:presetSelect.value,
         holes,
         ears:earsToggle.checked,
+        body_thickness_mm:bodyThicknessValue(),
+        ear_thickness_mm:earThicknessValue(),
+        ear_extension_mm:EAR_EXTENSION_MM,
+        ear_height_mm:EAR_HEIGHT_MM,
         corner_radius_mm:parseFloat(cornerRadiusInput.value)||0
       })
     });
