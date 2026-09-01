@@ -14,7 +14,7 @@ from shapely.ops import unary_union
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 
-app = FastAPI(title="AAC Keyguard Generator", version="0.3.1")
+app = FastAPI(title="AAC Keyguard Generator", version="0.4.0")
 
 PRESETS = {
     "ipad-7": {"label": "iPad 7", "width_mm": 207.82, "height_mm": 155.86, "pixels": [2160, 1620]},
@@ -35,10 +35,10 @@ class ModelRequest(BaseModel):
     preset: str = "ipad-9"
     holes: List[Hole] = []
     ears: bool = False
-    body_thickness_mm: float | None = None
-    ear_thickness_mm: float = 0.8
-    ear_extension_mm: float = 16.0
-    ear_height_mm: float = 18.0
+    body_thickness_mm: float | None = Field(default=None, ge=1.0, le=10.0)
+    ear_thickness_mm: float = Field(default=0.8, ge=0.2, le=3.0)
+    ear_extension_mm: float = Field(default=16.0, ge=6.0, le=20.0)
+    ear_height_mm: float = Field(default=18.0, ge=10.0, le=24.0)
     corner_radius_mm: float = Field(default=6.0, ge=0, le=20)
 
 
@@ -224,18 +224,36 @@ def rounded_plate(width: float, height: float, radius: float):
     return inner.buffer(radius, join_style=1)
 
 
-def rounded_side_ear(side: str, width: float, center_y: float, extension: float, ear_height: float, overlap: float = 0.8):
-    """Create one side tab with a semicircular outer end and a flat attachment to the plate."""
-    radius = ear_height / 2.0
+def rounded_rect(x0: float, y0: float, x1: float, y1: float, radius: float):
+    radius = max(0.0, min(radius, (x1 - x0) / 2, (y1 - y0) / 2))
+    if radius <= 0:
+        return box(x0, y0, x1, y1)
+    pieces = [
+        box(x0 + radius, y0, x1 - radius, y1),
+        box(x0, y0 + radius, x1, y1 - radius),
+        Point(x0 + radius, y0 + radius).buffer(radius, resolution=20),
+        Point(x1 - radius, y0 + radius).buffer(radius, resolution=20),
+        Point(x0 + radius, y1 - radius).buffer(radius, resolution=20),
+        Point(x1 - radius, y1 - radius).buffer(radius, resolution=20),
+    ]
+    return unary_union(pieces)
+
+
+def rounded_side_ear(
+    side: str,
+    width: float,
+    center_y: float,
+    extension: float,
+    ear_height: float,
+    overlap: float = 0.8,
+):
+    """Small rounded-rectangle tab; two on each side, leaving the side center clear."""
+    y0 = center_y - ear_height / 2
+    y1 = center_y + ear_height / 2
+    radius = min(4.0, ear_height * 0.25)
     if side == "left":
-        cap_center_x = -extension + radius
-        cap = Point(cap_center_x, center_y).buffer(radius, resolution=24)
-        neck = box(cap_center_x, center_y - radius, overlap, center_y + radius)
-    else:
-        cap_center_x = width + extension - radius
-        cap = Point(cap_center_x, center_y).buffer(radius, resolution=24)
-        neck = box(width - overlap, center_y - radius, cap_center_x, center_y + radius)
-    return unary_union([cap, neck])
+        return rounded_rect(-extension, y0, overlap, y1, radius)
+    return rounded_rect(width - overlap, y0, width + extension, y1, radius)
 
 
 def build_plate(payload: ModelRequest) -> trimesh.Trimesh:
@@ -245,7 +263,7 @@ def build_plate(payload: ModelRequest) -> trimesh.Trimesh:
     preset = PRESETS[payload.preset]
     width = preset["width_mm"]
     height = preset["height_mm"]
-    thickness = payload.body_thickness_mm or (5.0 if payload.ears else 3.0)
+    thickness = payload.body_thickness_mm if payload.body_thickness_mm is not None else (5.0 if payload.ears else 3.0)
 
     plate = rounded_plate(width, height, payload.corner_radius_mm)
     cutouts = []
@@ -264,15 +282,12 @@ def build_plate(payload: ModelRequest) -> trimesh.Trimesh:
     if not payload.ears:
         return trimesh.creation.extrude_polygon(plate, height=thickness)
 
-    # 四耳版本：左 2、右 2；正中央完全留空，避開舊款 iPad 的前鏡頭與 Home 鍵。
-    # 耳朵只存在最底下 0.8 mm，且一定在孔位鏡像完成後才加入。
-    ear_t = max(0.1, min(payload.ear_thickness_mm, thickness))
+    ear_t = max(0.2, min(payload.ear_thickness_mm, thickness))
     ear_h = max(10.0, min(payload.ear_height_mm, 24.0))
     ext = max(6.0, min(payload.ear_extension_mm, 20.0))
-
-    # 約離上下邊 30 mm；中間約 90 mm 的區域不放耳朵。
     edge_center = max(26.0, min(30.0, height * 0.20))
     centers = [edge_center, height - edge_center]
+
     ears_2d = []
     for cy in centers:
         ears_2d.append(rounded_side_ear("left", width, cy, ext, ear_h))
