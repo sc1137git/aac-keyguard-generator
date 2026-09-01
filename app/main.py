@@ -8,13 +8,13 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from shapely.geometry import box
+from shapely.geometry import Point, box
 from shapely.ops import unary_union
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 
-app = FastAPI(title="AAC Keyguard Generator", version="0.3.0")
+app = FastAPI(title="AAC Keyguard Generator", version="0.3.1")
 
 PRESETS = {
     "ipad-7": {"label": "iPad 7", "width_mm": 207.82, "height_mm": 155.86, "pixels": [2160, 1620]},
@@ -38,7 +38,7 @@ class ModelRequest(BaseModel):
     body_thickness_mm: float | None = None
     ear_thickness_mm: float = 0.8
     ear_extension_mm: float = 16.0
-    ear_height_mm: float = 22.0
+    ear_height_mm: float = 18.0
     corner_radius_mm: float = Field(default=6.0, ge=0, le=20)
 
 
@@ -114,7 +114,6 @@ def detect_aac_holes(image: np.ndarray) -> tuple[list[dict], dict]:
     height, width = image.shape[:2]
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-    # 先找完整黑框按鈕，再由重複尺寸推算整個 AAC 格線。
     _, dark = cv2.threshold(gray, 110, 255, cv2.THRESH_BINARY_INV)
     dark = cv2.morphologyEx(dark, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
     contours, _ = cv2.findContours(dark, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
@@ -163,7 +162,6 @@ def detect_aac_holes(image: np.ndarray) -> tuple[list[dict], dict]:
                 scores = [_border_score(gray, cx, cy, cell_w, cell_h) for cx in x_centers]
                 average_score = float(np.mean(scores)) if scores else 0.0
                 near_known = any(abs(cy - known) < row_gap * 0.28 for known in y_centers)
-                # 「點擊以添加按鈕」的虛線預留格也必須保留成可按孔位。
                 if near_known or average_score >= 0.12:
                     row_centers.append(cy)
                     if not near_known:
@@ -176,7 +174,6 @@ def detect_aac_holes(image: np.ndarray) -> tuple[list[dict], dict]:
                     holes.append(_inset_rect(cx - cell_w / 2, cy - cell_h / 2, cell_w, cell_h))
             grid_count = len(row_centers) * len(x_centers)
 
-    # 上方輸入列與右上功能鍵另外保留。
     edges = cv2.Canny(gray, 50, 150)
     edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
     edge_contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
@@ -227,6 +224,20 @@ def rounded_plate(width: float, height: float, radius: float):
     return inner.buffer(radius, join_style=1)
 
 
+def rounded_side_ear(side: str, width: float, center_y: float, extension: float, ear_height: float, overlap: float = 0.8):
+    """Create one side tab with a semicircular outer end and a flat attachment to the plate."""
+    radius = ear_height / 2.0
+    if side == "left":
+        cap_center_x = -extension + radius
+        cap = Point(cap_center_x, center_y).buffer(radius, resolution=24)
+        neck = box(cap_center_x, center_y - radius, overlap, center_y + radius)
+    else:
+        cap_center_x = width + extension - radius
+        cap = Point(cap_center_x, center_y).buffer(radius, resolution=24)
+        neck = box(width - overlap, center_y - radius, cap_center_x, center_y + radius)
+    return unary_union([cap, neck])
+
+
 def build_plate(payload: ModelRequest) -> trimesh.Trimesh:
     if payload.preset not in PRESETS:
         raise ValueError(f"Unknown preset: {payload.preset}")
@@ -243,7 +254,6 @@ def build_plate(payload: ModelRequest) -> trimesh.Trimesh:
         y = h.y * height
         w = h.w * width
         hh = h.h * height
-        # 有耳朵的版本會反向蓋上 iPad，所以先鏡像孔位，再建立耳朵。
         if payload.ears:
             x = width - x - w
         cutouts.append(box(x, y, x + w, y + hh))
@@ -254,17 +264,21 @@ def build_plate(payload: ModelRequest) -> trimesh.Trimesh:
     if not payload.ears:
         return trimesh.creation.extrude_polygon(plate, height=thickness)
 
-    # 有耳朵：耳朵只存在最底下 0.8 mm；主體總厚度預設 5 mm。
-    # 先把已鏡像孔位的 plate 與左右耳朵合成「底層」，避免 MultiPolygon 直接 extrude 失敗。
-    cy = height / 2
-    ear_h = payload.ear_height_mm
-    ext = payload.ear_extension_mm
+    # 四耳版本：左 2、右 2；正中央完全留空，避開舊款 iPad 的前鏡頭與 Home 鍵。
+    # 耳朵只存在最底下 0.8 mm，且一定在孔位鏡像完成後才加入。
     ear_t = max(0.1, min(payload.ear_thickness_mm, thickness))
-    overlap = 0.6
+    ear_h = max(10.0, min(payload.ear_height_mm, 24.0))
+    ext = max(6.0, min(payload.ear_extension_mm, 20.0))
 
-    left_ear = box(-ext, cy - ear_h / 2, overlap, cy + ear_h / 2)
-    right_ear = box(width - overlap, cy - ear_h / 2, width + ext, cy + ear_h / 2)
-    bottom_shape = unary_union([plate, left_ear, right_ear])
+    # 約離上下邊 30 mm；中間約 90 mm 的區域不放耳朵。
+    edge_center = max(26.0, min(30.0, height * 0.20))
+    centers = [edge_center, height - edge_center]
+    ears_2d = []
+    for cy in centers:
+        ears_2d.append(rounded_side_ear("left", width, cy, ext, ear_h))
+        ears_2d.append(rounded_side_ear("right", width, cy, ext, ear_h))
+
+    bottom_shape = unary_union([plate, *ears_2d])
     bottom_mesh = trimesh.creation.extrude_polygon(bottom_shape, height=ear_t)
 
     if thickness <= ear_t + 1e-6:
