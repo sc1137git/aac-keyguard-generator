@@ -121,19 +121,22 @@ def detect_aac_holes(image: np.ndarray) -> tuple[list[dict], dict]:
     for contour in contours:
         x, y, w, h = cv2.boundingRect(contour)
         nw, nh = w / width, h / height
-        if 0.075 < nw < 0.30 and 0.055 < nh < 0.18 and 1.1 < (w / max(h, 1)) < 4.5:
+        # 上限放寬到 0.5，才能涵蓋 2×2、2×3 這類大按鈕版面；
+        # 長寬比下限放到 0.6，接近正方形的格子也能被接受。
+        if 0.075 < nw < 0.50 and 0.055 < nh < 0.50 and 0.6 < (w / max(h, 1)) < 4.5:
             candidates.append((x / width, y / height, nw, nh))
     candidates = _dedupe_rects(candidates)
 
+    def _similar_count(seed: tuple[float, float, float, float]) -> int:
+        return sum(
+            abs(rect[2] - seed[2]) / seed[2] < 0.13 and abs(rect[3] - seed[3]) / seed[3] < 0.13
+            for rect in candidates
+        )
+
     dominant: list[tuple[float, float, float, float]] = []
     if candidates:
-        best_seed = max(
-            candidates,
-            key=lambda seed: sum(
-                abs(rect[2] - seed[2]) / seed[2] < 0.13 and abs(rect[3] - seed[3]) / seed[3] < 0.13
-                for rect in candidates
-            ),
-        )
+        # 數量相同時優先選面積較大者（按鈕外框通常比按鈕內的圖示大）。
+        best_seed = max(candidates, key=lambda seed: (_similar_count(seed), seed[2] * seed[3]))
         dominant = [
             rect for rect in candidates
             if abs(rect[2] - best_seed[2]) / best_seed[2] < 0.13
@@ -150,18 +153,19 @@ def detect_aac_holes(image: np.ndarray) -> tuple[list[dict], dict]:
         x_centers = _cluster([rect[0] + rect[2] / 2 for rect in dominant], max(0.018, cell_w * 0.20))
         y_centers = _cluster([rect[1] + rect[3] / 2 for rect in dominant], max(0.018, cell_h * 0.20))
 
-        if 3 <= len(x_centers) <= 8 and len(y_centers) >= 2:
+        if 2 <= len(x_centers) <= 8 and len(y_centers) >= 2:
             y_diffs = np.diff(sorted(y_centers))
             row_gap = float(np.median(y_diffs)) if len(y_diffs) else cell_h * 1.15
             first_y = min(y_centers)
             row_centers: list[float] = []
             for index in range(10):
                 cy = first_y + index * row_gap
-                if cy + cell_h / 2 >= 0.845:
+                near_known = any(abs(cy - known) < row_gap * 0.28 for known in y_centers)
+                # 已實際偵測到的列一定保留；只有「推算出來的虛線列」才受底部 0.845 的限制。
+                if cy + cell_h / 2 > 1.0 or (cy + cell_h / 2 >= 0.845 and not near_known):
                     break
                 scores = [_border_score(gray, cx, cy, cell_w, cell_h) for cx in x_centers]
                 average_score = float(np.mean(scores)) if scores else 0.0
-                near_known = any(abs(cy - known) < row_gap * 0.28 for known in y_centers)
                 if near_known or average_score >= 0.12:
                     row_centers.append(cy)
                     if not near_known:
