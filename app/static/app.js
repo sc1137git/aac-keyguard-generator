@@ -116,6 +116,46 @@ function fillRoundedRect(x,y,w,h,r,fill='black'){
   ctx.restore();
 }
 
+// 耳朵：只有外側（遠離主體那一側）是圓角，內側直角接主體。
+function earCorners(side,r){
+  return side==='left'?{tl:r,tr:0,br:0,bl:r}:{tl:0,tr:r,br:r,bl:0};
+}
+
+function fillEar(side,x,y,w,h,r){
+  r=Math.max(0,Math.min(r,w/2,h/2));
+  const c=earCorners(side,r);
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(x+c.tl,y);
+  ctx.lineTo(x+w-c.tr,y);
+  if(c.tr)ctx.arcTo(x+w,y,x+w,y+c.tr,c.tr);
+  ctx.lineTo(x+w,y+h-c.br);
+  if(c.br)ctx.arcTo(x+w,y+h,x+w-c.br,y+h,c.br);
+  ctx.lineTo(x+c.bl,y+h);
+  if(c.bl)ctx.arcTo(x,y+h,x,y+h-c.bl,c.bl);
+  ctx.lineTo(x,y+c.tl);
+  if(c.tl)ctx.arcTo(x,y,x+c.tl,y,c.tl);
+  ctx.closePath();
+  ctx.fillStyle='black';
+  ctx.fill();
+  ctx.restore();
+}
+
+function earSvgPath(side,x,y,w,h,r){
+  r=Math.max(0,Math.min(r,w/2,h/2));
+  const c=earCorners(side,r);
+  const f=v=>v.toFixed(3);
+  let d=`M${f(x+c.tl)} ${f(y)} H${f(x+w-c.tr)}`;
+  if(c.tr)d+=` A${f(c.tr)} ${f(c.tr)} 0 0 1 ${f(x+w)} ${f(y+c.tr)}`;
+  d+=` V${f(y+h-c.br)}`;
+  if(c.br)d+=` A${f(c.br)} ${f(c.br)} 0 0 1 ${f(x+w-c.br)} ${f(y+h)}`;
+  d+=` H${f(x+c.bl)}`;
+  if(c.bl)d+=` A${f(c.bl)} ${f(c.bl)} 0 0 1 ${f(x)} ${f(y+h-c.bl)}`;
+  d+=` V${f(y+c.tl)}`;
+  if(c.tl)d+=` A${f(c.tl)} ${f(c.tl)} 0 0 1 ${f(x+c.tl)} ${f(y)}`;
+  return `<path d="${d} Z" fill="black"/>`;
+}
+
 function drawPreview(){
   const p=presets[presetSelect.value];
   if(!p)return;
@@ -146,8 +186,8 @@ function drawPreview(){
   const earR=EAR_RADIUS_MM*scale;
   for(const cyMm of earCentersMm(p.height_mm)){
     const y=plateY+(cyMm-EAR_HEIGHT_MM/2)*scale;
-    fillRoundedRect(plateX-EAR_EXTENSION_MM*scale,y,earW,earH,earR,'black');
-    fillRoundedRect(plateX+(p.width_mm-EAR_OVERLAP_MM)*scale,y,earW,earH,earR,'black');
+    fillEar('left',plateX-EAR_EXTENSION_MM*scale,y,earW,earH,earR);
+    fillEar('right',plateX+(p.width_mm-EAR_OVERLAP_MM)*scale,y,earW,earH,earR);
   }
 
   ctx.fillStyle='white';
@@ -627,8 +667,8 @@ function svgText(){
     const earW=EAR_EXTENSION_MM+EAR_OVERLAP_MM;
     for(const cy of earCentersMm(p.height_mm)){
       const y=cy-EAR_HEIGHT_MM/2;
-      earRects+=`<rect x="0" y="${y.toFixed(3)}" width="${earW.toFixed(3)}" height="${EAR_HEIGHT_MM}" rx="${EAR_RADIUS_MM}" ry="${EAR_RADIUS_MM}" fill="black"/>`;
-      earRects+=`<rect x="${(offset+p.width_mm-EAR_OVERLAP_MM).toFixed(3)}" y="${y.toFixed(3)}" width="${earW.toFixed(3)}" height="${EAR_HEIGHT_MM}" rx="${EAR_RADIUS_MM}" ry="${EAR_RADIUS_MM}" fill="black"/>`;
+      earRects+=earSvgPath('left',0,y,earW,EAR_HEIGHT_MM,EAR_RADIUS_MM);
+      earRects+=earSvgPath('right',offset+p.width_mm-EAR_OVERLAP_MM,y,earW,EAR_HEIGHT_MM,EAR_RADIUS_MM);
     }
   }
   const holeRects=list.map(h=>`<rect x="${(offset+h.x*p.width_mm).toFixed(3)}" y="${(h.y*p.height_mm).toFixed(3)}" width="${(h.w*p.width_mm).toFixed(3)}" height="${(h.h*p.height_mm).toFixed(3)}" fill="white"/>`).join('');
