@@ -189,13 +189,33 @@ def detect_aac_holes(image: np.ndarray) -> tuple[list[dict], dict]:
         if y / height < 0.16 and 0.07 < nh < 0.19 and nw > 0.08 and rectangularity > 0.72:
             top_rects.append((x / width, y / height, nw, nh))
     top_rects = _dedupe_rects(top_rects)
+    # 上方列的孔要和外框保留一定厚度：左右對齊按鈕格的外緣，上緣留同樣寬的框。
+    # 沒有格線時，至少保留 TOP_FRAME_MIN（以寬度為基準，iPad 9 約 3.7 mm）。
+    TOP_FRAME_MIN = 0.018
+    if holes:
+        frame_left = max(TOP_FRAME_MIN, min(h["x"] for h in holes))
+        frame_right = min(1 - TOP_FRAME_MIN, max(h["x"] + h["w"] for h in holes))
+    else:
+        frame_left, frame_right = TOP_FRAME_MIN, 1 - TOP_FRAME_MIN
+    frame_top = frame_left * width / height  # 換成高度方向的比例，讓上框和側框一樣厚
+
+    def _framed(rect: dict) -> dict | None:
+        x0 = max(rect["x"], frame_left)
+        x1 = min(rect["x"] + rect["w"], frame_right)
+        y0 = max(rect["y"], frame_top)
+        y1 = rect["y"] + rect["h"]
+        if x1 - x0 < 0.01 or y1 - y0 < 0.01:
+            return None
+        return {"x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0}
+
     if top_rects:
         large = [rect for rect in top_rects if rect[2] > 0.45]
         right = [rect for rect in top_rects if rect[0] > 0.72 and rect[2] < 0.30]
-        if large:
-            holes.append(_inset_rect(*max(large, key=lambda r: r[2] * r[3]), factor=0.035))
-        if right:
-            holes.append(_inset_rect(*max(right, key=lambda r: r[2] * r[3]), factor=0.035))
+        for group in (large, right):
+            if group:
+                framed = _framed(_inset_rect(*max(group, key=lambda r: r[2] * r[3]), factor=0.035))
+                if framed:
+                    holes.append(framed)
 
     holes.sort(key=lambda item: (item["y"], item["x"]))
     return holes, {
@@ -228,18 +248,31 @@ def rounded_plate(width: float, height: float, radius: float):
     return inner.buffer(radius, join_style=1)
 
 
-def rounded_rect(x0: float, y0: float, x1: float, y1: float, radius: float):
+def rounded_rect(
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+    radius: float,
+    round_left: bool = True,
+    round_right: bool = True,
+):
+    """Rectangle with rounded corners on the chosen side(s) only."""
     radius = max(0.0, min(radius, (x1 - x0) / 2, (y1 - y0) / 2))
-    if radius <= 0:
+    if radius <= 0 or not (round_left or round_right):
         return box(x0, y0, x1, y1)
+    left = x0 + radius if round_left else x0
+    right = x1 - radius if round_right else x1
     pieces = [
-        box(x0 + radius, y0, x1 - radius, y1),
+        box(left, y0, right, y1),
         box(x0, y0 + radius, x1, y1 - radius),
-        Point(x0 + radius, y0 + radius).buffer(radius, resolution=20),
-        Point(x1 - radius, y0 + radius).buffer(radius, resolution=20),
-        Point(x0 + radius, y1 - radius).buffer(radius, resolution=20),
-        Point(x1 - radius, y1 - radius).buffer(radius, resolution=20),
     ]
+    if round_left:
+        pieces.append(Point(x0 + radius, y0 + radius).buffer(radius, resolution=20))
+        pieces.append(Point(x0 + radius, y1 - radius).buffer(radius, resolution=20))
+    if round_right:
+        pieces.append(Point(x1 - radius, y0 + radius).buffer(radius, resolution=20))
+        pieces.append(Point(x1 - radius, y1 - radius).buffer(radius, resolution=20))
     return unary_union(pieces)
 
 
@@ -251,13 +284,16 @@ def rounded_side_ear(
     ear_height: float,
     overlap: float = 0.8,
 ):
-    """Small rounded-rectangle tab; two on each side, leaving the side center clear."""
+    """Small tab; two on each side, leaving the side center clear.
+
+    Only the outer corners are rounded; the inner side joins the plate with square corners.
+    """
     y0 = center_y - ear_height / 2
     y1 = center_y + ear_height / 2
     radius = min(4.0, ear_height * 0.25)
     if side == "left":
-        return rounded_rect(-extension, y0, overlap, y1, radius)
-    return rounded_rect(width - overlap, y0, width + extension, y1, radius)
+        return rounded_rect(-extension, y0, overlap, y1, radius, round_left=True, round_right=False)
+    return rounded_rect(width - overlap, y0, width + extension, y1, radius, round_left=False, round_right=True)
 
 
 def build_plate(payload: ModelRequest) -> trimesh.Trimesh:
